@@ -6,6 +6,7 @@ from urllib.parse import urljoin
 from urllib.parse import urlparse
 import re
 from datetime import datetime, timedelta
+import json
 
 # Not all systems have this so conditionally define parser
 try:
@@ -62,18 +63,19 @@ ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
-conn = sqlite3.connect('content.sqlite')
+conn = sqlite3.connect('capstone.sqlite')
 cur = conn.cursor()
 
-baseurl = "http://mbox.dr-chuck.net/sakai.devel/"
+baseurl = "https://www.datos.gov.co/resource/mcec-87by.json"
+# baseurl = "http://mbox.dr-chuck.net/sakai.devel/"
 
-cur.execute('''CREATE TABLE IF NOT EXISTS Messages
-    (id INTEGER UNIQUE, email TEXT, sent_at TEXT,
-     subject TEXT, headers TEXT, body TEXT)''')
+cur.execute('''CREATE TABLE IF NOT EXISTS Currency
+    (id INTEGER UNIQUE, unit TEXT, value DECIMAL,
+    initDate DATETIME, finishDate DATETIME)''')
 
 # Pick up where we left off
 start = None
-cur.execute('SELECT max(id) FROM Messages' )
+cur.execute('SELECT max(id) FROM Currency' )
 try:
     row = cur.fetchone()
     if row is None :
@@ -84,6 +86,8 @@ except:
     start = 0
 
 if start is None : start = 0
+
+print("start", start)
 
 many = 0
 count = 0
@@ -96,7 +100,7 @@ while True:
         many = int(sval)
 
     start = start + 1
-    cur.execute('SELECT id FROM Messages WHERE id=?', (start,) )
+    cur.execute('SELECT id FROM Currency WHERE id=?', (start,) )
     try:
         row = cur.fetchone()
         if row is not None : continue
@@ -104,13 +108,14 @@ while True:
         row = None
 
     many = many - 1
-    url = baseurl + str(start) + '/' + str(start + 1)
+    url = baseurl
 
     text = "None"
     try:
         # Open with a timeout of 30 seconds
         document = urllib.request.urlopen(url, None, 30, context=ctx)
         text = document.read().decode()
+        js = json.loads(text)
         if document.getcode() != 200 :
             print("Error code=",document.getcode(), url)
             break
@@ -124,64 +129,36 @@ while True:
         fail = fail + 1
         if fail > 5 : break
         continue
-
-    print(url,len(text))
+    
+    print(url,len(js))
     count = count + 1
 
-    if not text.startswith("From "):
-        print(text)
-        print("Did not find From ")
+    if not js:
+        print("text1",text)
+        print("Failure to Retreive data ")
         fail = fail + 1
         if fail > 5 : break
         continue
 
-    pos = text.find("\n\n")
-    if pos > 0 :
-        hdr = text[:pos]
-        body = text[pos+2:]
-    else:
-        print(text)
-        print("Could not find break between headers and body")
-        fail = fail + 1
-        if fail > 5 : break
-        continue
-
-    email = None
-    x = re.findall('\nFrom: .* <(\S+@\S+)>\n', hdr)
-    if len(x) == 1 :
-        email = x[0];
-        email = email.strip().lower()
-        email = email.replace("<","")
-    else:
-        x = re.findall('\nFrom: (\S+@\S+)\n', hdr)
-        if len(x) == 1 :
-            email = x[0];
-            email = email.strip().lower()
-            email = email.replace("<","")
-
-    date = None
-    y = re.findall('\Date: .*, (.*)\n', hdr)
-    if len(y) == 1 :
-        tdate = y[0]
-        tdate = tdate[:26]
-        try:
-            sent_at = parsemaildate(tdate)
-        except:
-            print(text)
-            print("Parse fail",tdate)
-            fail = fail + 1
-            if fail > 5 : break
-            continue
-
-    subject = None
-    z = re.findall('\Subject: (.*)\n', hdr)
-    if len(z) == 1 : subject = z[0].strip().lower();
-
+    unit = None
+    value = None
+    initDate = None
+    finishDate = None
+    if len(js[start]["unidad"]) > 0:
+        unit = js[start]["unidad"]
+    if len(js[start]["valor"]) > 0:
+        value = js[start]["valor"]
+    if len(js[start]["vigenciadesde"]) > 0:
+        initDate = js[start]["vigenciadesde"]
+    if len(js[start]["vigenciahasta"]) > 0:
+        finishDate = js[start]["vigenciahasta"]
+    
+    
     # Reset the fail counter
     fail = 0
-    print("   ",email,sent_at,subject)
-    cur.execute('''INSERT OR IGNORE INTO Messages (id, email, sent_at, subject, headers, body)
-        VALUES ( ?, ?, ?, ?, ?, ? )''', ( start, email, sent_at, subject, hdr, body))
+    print("   ",value,initDate,finishDate)
+    cur.execute('''INSERT OR IGNORE INTO Currency (id, unit, value, initDate, finishDate)
+        VALUES ( ?, ?, ?, ?, ? )''', ( start, unit, value, initDate, finishDate))
     if count % 50 == 0 : conn.commit()
     if count % 100 == 0 : time.sleep(1)
 
