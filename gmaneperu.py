@@ -63,14 +63,14 @@ ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
-conn = sqlite3.connect('colombia.sqlite')
+conn = sqlite3.connect('peru.sqlite')
 cur = conn.cursor()
 
-baseurl = "https://www.datos.gov.co/resource/mcec-87by.json"
+baseurl = "https://estadisticas.bcrp.gob.pe/estadisticas/series/api/PD04637PD-PD04638PD/json/2020-01-01/2023-12-31/"
 # baseurl = "http://mbox.dr-chuck.net/sakai.devel/"
 
 cur.execute('''CREATE TABLE IF NOT EXISTS Currency
-    (id INTEGER UNIQUE,country TEXT, unit TEXT, value DECIMAL,
+    (id INTEGER UNIQUE, country TEXT, unit TEXT, value DECIMAL,
     initDate DATETIME)''')
 
 # Pick up where we left off
@@ -134,36 +134,30 @@ while True:
     count = count + 1
 
     if not js:
-        print("text1",text)
         print("Failure to Retreive data ")
         fail = fail + 1
         if fail > 5 : break
         continue
     
-    country = "Colombia"
-    unit = None
+    country = "Peru"
+    unit = "PEN"
     value = None
     initDate = None
 
     index = start - 1
 
-    if len(js[index]["unidad"]) > 0:
-        unit = js[index]["unidad"]
+    if len(js["periods"][index]["values"]) > 0:
+        value = js["periods"][index]["values"][1]
 
-    if len(js[index]["valor"]) > 0:
-        value = js[index]["valor"]
-
-    if len(js[index]["vigenciadesde"]) > 0:
-        initDate = js[index]["vigenciadesde"]
+    if len(js["periods"][index]["name"]) > 0:
+        initDate = js["periods"][index]["name"]
 
 
-    
-    
     # Reset the fail counter
     fail = 0
     print("   ",value,initDate)
     cur.execute('''INSERT OR IGNORE INTO Currency (id, country, unit, value, initDate)
-        VALUES ( ?, ?, ?, ?, ?)''', ( start, country, unit, value, initDate))
+        VALUES ( ?, ?, ?, ?, ? )''', ( start, country, unit, value, initDate))
     if count % 50 == 0 : conn.commit()
     if count % 100 == 0 : time.sleep(1)
 

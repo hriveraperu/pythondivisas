@@ -63,14 +63,14 @@ ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
-conn = sqlite3.connect('colombia.sqlite')
+conn = sqlite3.connect('brasil.sqlite')
 cur = conn.cursor()
 
-baseurl = "https://www.datos.gov.co/resource/mcec-87by.json"
+baseurl = "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarPeriodo(dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)?@dataInicial=%2701-01-2020%27&@dataFinalCotacao=%2703-09-2024%27&$top=1100&$format=json&$select=cotacaoCompra,cotacaoVenda,dataHoraCotacao"
 # baseurl = "http://mbox.dr-chuck.net/sakai.devel/"
 
 cur.execute('''CREATE TABLE IF NOT EXISTS Currency
-    (id INTEGER UNIQUE,country TEXT, unit TEXT, value DECIMAL,
+    (id INTEGER UNIQUE, country TEXT, unit TEXT, value DECIMAL,
     initDate DATETIME)''')
 
 # Pick up where we left off
@@ -134,36 +134,30 @@ while True:
     count = count + 1
 
     if not js:
-        print("text1",text)
         print("Failure to Retreive data ")
         fail = fail + 1
         if fail > 5 : break
         continue
     
-    country = "Colombia"
-    unit = None
+    country = "Brasil"
+    unit = "BRL"
     value = None
     initDate = None
 
     index = start - 1
 
-    if len(js[index]["unidad"]) > 0:
-        unit = js[index]["unidad"]
+    if js["value"][index]["cotacaoCompra"] > 0:
+        value = js["value"][index]["cotacaoCompra"]
 
-    if len(js[index]["valor"]) > 0:
-        value = js[index]["valor"]
-
-    if len(js[index]["vigenciadesde"]) > 0:
-        initDate = js[index]["vigenciadesde"]
+    if len(js["value"][index]["dataHoraCotacao"]) > 0:
+        initDate = js["value"][index]["dataHoraCotacao"]
 
 
-    
-    
     # Reset the fail counter
     fail = 0
     print("   ",value,initDate)
     cur.execute('''INSERT OR IGNORE INTO Currency (id, country, unit, value, initDate)
-        VALUES ( ?, ?, ?, ?, ?)''', ( start, country, unit, value, initDate))
+        VALUES ( ?, ?, ?, ?, ? )''', ( start, country, unit, value, initDate))
     if count % 50 == 0 : conn.commit()
     if count % 100 == 0 : time.sleep(1)
 
