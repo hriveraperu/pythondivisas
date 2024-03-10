@@ -2,5 +2,5 @@ PERU: https://estadisticas.bcrp.gob.pe/estadisticas/series/api/PD04637PD-PD04638
 CHILE: https://mindicador.cl/api/dolar/2023/
 ARGENTINA: https://api.argentinadatos.com/v1/cotizaciones/dolares/blue/
 BOLIVIA:
-BRASIL: 
+BRASIL: https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarPeriodo(dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)?@dataInicial=%2701-01-2020%27&@dataFinalCotacao=%2703-09-2024%27&$top=100&$format=json&$select=cotacaoCompra,cotacaoVenda,dataHoraCotacao
 COLOMBIA: https://www.datos.gov.co/resource/mcec-87by.json
