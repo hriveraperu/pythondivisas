@@ -6,10 +6,14 @@
       google.load("visualization", "1", {packages:["corechart"]});
       google.setOnLoadCallback(drawChart);
       function drawChart() {
+
+        var firstDateString = gline[2][0];
+        var year = (new Date(firstDateString)).getFullYear();
+
         var data = google.visualization.arrayToDataTable( gline );
 
         var options = {
-          title: 'Currency lines against 1 USD by Country and by Year',
+          title: 'Currency lines against 1 USD by Country and by Year (' + year + ')',
           chartArea: {left:'10%',top:'10%', width: '65%', height: '80%'}
         };
 
@@ -19,6 +23,7 @@
     </script>
   </head>
   <body>
+    <div id="year"></div>
     <div id="chart_div" style="width: 1300px; height: 600px;"></div>
   </body>
 </html>

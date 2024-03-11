@@ -11,8 +11,9 @@ conn_index = sqlite3.connect('index.sqlite')
 cur_index = conn_index.cursor()
 
 # Create the ExchangeRates table in index.sqlite if it doesn't exist
+cur_index.execute('''DROP TABLE IF EXISTS ExchangeRates''')
 cur_index.execute('''
-    CREATE TABLE IF NOT EXISTS ExchangeRates (
+    CREATE TABLE ExchangeRates (
         id INTEGER PRIMARY KEY,
         country TEXT,
         unit TEXT,

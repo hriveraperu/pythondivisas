@@ -19,8 +19,9 @@ cur = conn.cursor()
 baseurl = "https://www.datos.gov.co/resource/mcec-87by.json"
 # baseurl = "http://mbox.dr-chuck.net/sakai.devel/"
 
-cur.execute('''CREATE TABLE IF NOT EXISTS Currency
-    (id INTEGER UNIQUE, country TEXT, unit TEXT, value DECIMAL,
+cur.execute('''DROP TABLE IF EXISTS Currency''')
+cur.execute('''CREATE TABLE Currency
+    (id INTEGER PRIMARY KEY, country TEXT, unit TEXT, value DECIMAL,
     initDate DATETIME)''')
 
 url = baseurl
@@ -42,7 +43,7 @@ except Exception as e:
     print("Error",e)
     sys.exit(1)
 country = "Colombia"
-unit = "COP (/10)"
+unit = "COP (/100)"
 value = None
 initDate = None
 
@@ -61,7 +62,7 @@ for index, period in enumerate(js):
     if initDate[0:4] == "2019" or initDate[0:4] == "2024":
         continue  # Skip this row if value is "n.d."
     initDate = parsemaildate(initDate)
-    value = round(float(value/10), 4)
+    value = round(float(value)/100, 4)
     print("   ", value, initDate)
     cur.execute('''INSERT OR IGNORE INTO Currency (id, country, unit, value, initDate)
         VALUES ( ?, ?, ?, ?, ? )''', (index + 1, country, unit, value, initDate))

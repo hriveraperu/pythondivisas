@@ -19,7 +19,8 @@ cur = conn.cursor()
 baseurl = "https://mindicador.cl/api/dolar/" # You can upload more data changing the year
 # baseurl = "http://mbox.dr-chuck.net/sakai.devel/"
 
-cur.execute('''CREATE TABLE IF NOT EXISTS Currency
+cur.execute('''DROP TABLE IF EXISTS Currency''')
+cur.execute('''CREATE TABLE Currency
     (id INTEGER PRIMARY KEY AUTOINCREMENT, country TEXT, unit TEXT, value DECIMAL,
     initDate DATETIME)''')
 
@@ -52,12 +53,12 @@ for year in range(2020, 2024):
     # start_index = max_id + 1 if max_id else 1
 
     country = "Chile"
-    unit = "CLP"
+    unit = "CLP (/10)"
 
 
     for period in js["serie"]:
         if period["valor"] > 0:
-            value = round(float(period["valor"]), 3)
+            value = round(float(period["valor"])/10, 3)
             initDate = parsemaildate(period["fecha"])
             print("Inserting data:", country, unit, value, initDate)
             cur.execute('''INSERT INTO Currency (country, unit, value, initDate)
