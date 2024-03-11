@@ -8,55 +8,10 @@ import re
 from datetime import datetime, timedelta
 import json
 
-# Not all systems have this so conditionally define parser
-try:
-    import dateutil.parser as parser
-except:
-    pass
-
 def parsemaildate(md) :
-    # See if we have dateutil
-    try:
-        pdate = parser.parse(tdate)
-        test_at = pdate.isoformat()
-        return test_at
-    except:
-        pass
+    md = md[0:10]
+    return md
 
-    # Non-dateutil version - we try our best
-
-    pieces = md.split()
-    notz = " ".join(pieces[:4]).strip()
-
-    # Try a bunch of format variations - strptime() is *lame*
-    dnotz = None
-    for form in [ '%d %b %Y %H:%M:%S', '%d %b %Y %H:%M:%S',
-        '%d %b %Y %H:%M', '%d %b %Y %H:%M', '%d %b %y %H:%M:%S',
-        '%d %b %y %H:%M:%S', '%d %b %y %H:%M', '%d %b %y %H:%M' ] :
-        try:
-            dnotz = datetime.strptime(notz, form)
-            break
-        except:
-            continue
-
-    if dnotz is None :
-        # print 'Bad Date:',md
-        return None
-
-    iso = dnotz.isoformat()
-
-    tz = "+0000"
-    try:
-        tz = pieces[4]
-        ival = int(tz) # Only want numeric timezone values
-        if tz == '-0000' : tz = '+0000'
-        tzh = tz[:3]
-        tzm = tz[3:]
-        tz = tzh+":"+tzm
-    except:
-        pass
-
-    return iso+tz
 
 # Ignore SSL certificate errors
 ctx = ssl.create_default_context()
@@ -73,93 +28,48 @@ cur.execute('''CREATE TABLE IF NOT EXISTS Currency
     (id INTEGER UNIQUE, country TEXT, unit TEXT, value DECIMAL,
     initDate DATETIME)''')
 
-# Pick up where we left off
-start = None
-cur.execute('SELECT max(id) FROM Currency' )
+url = baseurl
+text = "None"
 try:
-    row = cur.fetchone()
-    if row is None :
-        start = 0
-    else:
-        start = row[0]
-except:
-    start = 0
+    # Open with a timeout of 30 seconds
+    document = urllib.request.urlopen(url, None, 30, context=ctx)
+    text = document.read().decode()
+    js = json.loads(text)
+    if document.getcode() != 200 :
+        print("Error code=",document.getcode(), url)
+        sys.exit(1)
+except KeyboardInterrupt:
+    print('')
+    print('Program interrupted by user...')
+    sys.exit(1)
+except Exception as e:
+    print("Unable to retrieve or parse page",url)
+    print("Error",e)
+    sys.exit(1)
 
-if start is None : start = 0
+country = "Argentina"
+unit = "ARS"
+value = None
+initDate = None
 
-print("start", start)
+index = 0
 
-many = 0
-count = 0
-fail = 0
-while True:
-    if ( many < 1 ) :
-        conn.commit()
-        sval = input('How many messages:')
-        if ( len(sval) < 1 ) : break
-        many = int(sval)
-
-    start = start + 1
-    cur.execute('SELECT id FROM Currency WHERE id=?', (start,) )
-    try:
-        row = cur.fetchone()
-        if row is not None : continue
-    except:
-        row = None
-
-    many = many - 1
-    url = baseurl
-
-    text = "None"
-    try:
-        # Open with a timeout of 30 seconds
-        document = urllib.request.urlopen(url, None, 30, context=ctx)
-        text = document.read().decode()
-        js = json.loads(text)
-        if document.getcode() != 200 :
-            print("Error code=",document.getcode(), url)
-            break
-    except KeyboardInterrupt:
-        print('')
-        print('Program interrupted by user...')
-        break
-    except Exception as e:
-        print("Unable to retrieve or parse page",url)
-        print("Error",e)
-        fail = fail + 1
-        if fail > 5 : break
-        continue
-    
-    print(url,len(js))
-    count = count + 1
-
-    if not js:
-        print("Failure to Retreive data ")
-        fail = fail + 1
-        if fail > 5 : break
-        continue
-    
-    country = "Argentina"
-    unit = "ARS"
-    value = None
-    initDate = None
-
-    index = start - 1
-
+for index, period in enumerate(js):
     if js[index]["compra"] > 0:
         value = js[index]["compra"]
 
     if len(js[index]["fecha"]) > 0:
         initDate = js[index]["fecha"]
 
-
-    # Reset the fail counter
-    fail = 0
-    print("   ",value,initDate)
+    if int(initDate[0:4]) <= 2019 or int(initDate[0:4]) == 2024:
+        continue  # Skip this row if value is "n.d."
+    initDate = parsemaildate(initDate)
+    value = round(float(value), 3)
+    print("   ", value, initDate)
     cur.execute('''INSERT OR IGNORE INTO Currency (id, country, unit, value, initDate)
-        VALUES ( ?, ?, ?, ?, ? )''', ( start, country, unit, value, initDate))
-    if count % 50 == 0 : conn.commit()
-    if count % 100 == 0 : time.sleep(1)
+        VALUES ( ?, ?, ?, ?, ? )''', (index + 1, country, unit, value, initDate))
+    # if count % 50 == 0 : conn.commit()
+    # if count % 100 == 0 : time.sleep(1)
 
 conn.commit()
 cur.close()

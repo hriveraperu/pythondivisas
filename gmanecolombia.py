@@ -1,8 +1,10 @@
 import sqlite3
+import time
 import ssl
 import urllib.request, urllib.parse, urllib.error
 from urllib.parse import urljoin
 from urllib.parse import urlparse
+import re
 from datetime import datetime, timedelta
 import json
 
@@ -15,10 +17,10 @@ ctx = ssl.create_default_context()
 ctx.check_hostname = False
 ctx.verify_mode = ssl.CERT_NONE
 
-conn = sqlite3.connect('brasil.sqlite')
+conn = sqlite3.connect('colombia.sqlite')
 cur = conn.cursor()
 
-baseurl = "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoDolarPeriodo(dataInicial=@dataInicial,dataFinalCotacao=@dataFinalCotacao)?@dataInicial=%2701-01-2020%27&@dataFinalCotacao=%2712-31-2023%27&$top=1100&$format=json&$select=cotacaoCompra,cotacaoVenda,dataHoraCotacao"
+baseurl = "https://www.datos.gov.co/resource/mcec-87by.json"
 # baseurl = "http://mbox.dr-chuck.net/sakai.devel/"
 
 cur.execute('''CREATE TABLE IF NOT EXISTS Currency
@@ -43,24 +45,32 @@ except Exception as e:
     print("Unable to retrieve or parse page",url)
     print("Error",e)
     sys.exit(1)
-country = "Brazil"
-unit = "BRL"
+country = "Colombia"
+unit = "COP (/10)"
 value = None
 initDate = None
 
 index = 0
 
-for index, period in enumerate(js["value"]):
-    if js["value"][index]["cotacaoCompra"] > 0:
-        value = js["value"][index]["cotacaoCompra"]
+for index, period in enumerate(js):
 
-    if len(js["value"][index]["dataHoraCotacao"]) > 0:
-        initDate = js["value"][index]["dataHoraCotacao"]
+    if len(js[index]["unidad"]) > 0:
+        unit = js[index]["unidad"]
+
+    if len(js[index]["valor"]) > 0:
+        value = js[index]["valor"]
+
+    if len(js[index]["vigenciadesde"]) > 0:
+        initDate = js[index]["vigenciadesde"]
+    if initDate[0:4] == "2019" or initDate[0:4] == "2024":
+        continue  # Skip this row if value is "n.d."
     initDate = parsemaildate(initDate)
-    value = round(float(value), 3)
+    value = round(float(value/10), 4)
     print("   ", value, initDate)
     cur.execute('''INSERT OR IGNORE INTO Currency (id, country, unit, value, initDate)
         VALUES ( ?, ?, ?, ?, ? )''', (index + 1, country, unit, value, initDate))
+# if count % 50 == 0 : conn.commit()
+# if count % 100 == 0 : time.sleep(1)
 
 conn.commit()
 cur.close()

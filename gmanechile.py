@@ -8,55 +8,9 @@ import re
 from datetime import datetime, timedelta
 import json
 
-# Not all systems have this so conditionally define parser
-try:
-    import dateutil.parser as parser
-except:
-    pass
-
 def parsemaildate(md) :
-    # See if we have dateutil
-    try:
-        pdate = parser.parse(tdate)
-        test_at = pdate.isoformat()
-        return test_at
-    except:
-        pass
-
-    # Non-dateutil version - we try our best
-
-    pieces = md.split()
-    notz = " ".join(pieces[:4]).strip()
-
-    # Try a bunch of format variations - strptime() is *lame*
-    dnotz = None
-    for form in [ '%d %b %Y %H:%M:%S', '%d %b %Y %H:%M:%S',
-        '%d %b %Y %H:%M', '%d %b %Y %H:%M', '%d %b %y %H:%M:%S',
-        '%d %b %y %H:%M:%S', '%d %b %y %H:%M', '%d %b %y %H:%M' ] :
-        try:
-            dnotz = datetime.strptime(notz, form)
-            break
-        except:
-            continue
-
-    if dnotz is None :
-        # print 'Bad Date:',md
-        return None
-
-    iso = dnotz.isoformat()
-
-    tz = "+0000"
-    try:
-        tz = pieces[4]
-        ival = int(tz) # Only want numeric timezone values
-        if tz == '-0000' : tz = '+0000'
-        tzh = tz[:3]
-        tzm = tz[3:]
-        tz = tzh+":"+tzm
-    except:
-        pass
-
-    return iso+tz
+    md = md[0:10]
+    return md
 
 # Ignore SSL certificate errors
 ctx = ssl.create_default_context()
@@ -66,49 +20,17 @@ ctx.verify_mode = ssl.CERT_NONE
 conn = sqlite3.connect('chile.sqlite')
 cur = conn.cursor()
 
-baseurl = "https://mindicador.cl/api/dolar/2023/" # You can upload more data changing the year
+baseurl = "https://mindicador.cl/api/dolar/" # You can upload more data changing the year
 # baseurl = "http://mbox.dr-chuck.net/sakai.devel/"
 
 cur.execute('''CREATE TABLE IF NOT EXISTS Currency
-    (id INTEGER UNIQUE, country TEXT, unit TEXT, value DECIMAL,
+    (id INTEGER PRIMARY KEY AUTOINCREMENT, country TEXT, unit TEXT, value DECIMAL,
     initDate DATETIME)''')
 
-# Pick up where we left off
-start = None
-cur.execute('SELECT max(id) FROM Currency' )
-try:
-    row = cur.fetchone()
-    if row is None :
-        start = 0
-    else:
-        start = row[0]
-except:
-    start = 0
+for year in range(2020, 2024):
+    url = baseurl + str(year)
+    print("Fetching data from:", url)  # Add this line
 
-if start is None : start = 0
-
-print("start", start)
-
-many = 0
-count = 0
-fail = 0
-while True:
-    if ( many < 1 ) :
-        conn.commit()
-        sval = input('How many messages:')
-        if ( len(sval) < 1 ) : break
-        many = int(sval)
-
-    start = start + 1
-    cur.execute('SELECT id FROM Currency WHERE id=?', (start,) )
-    try:
-        row = cur.fetchone()
-        if row is not None : continue
-    except:
-        row = None
-
-    many = many - 1
-    url = baseurl
 
     text = "None"
     try:
@@ -116,50 +38,38 @@ while True:
         document = urllib.request.urlopen(url, None, 30, context=ctx)
         text = document.read().decode()
         js = json.loads(text)
+        print("Data length:", len(js["serie"]))  # Add this line
         if document.getcode() != 200 :
             print("Error code=",document.getcode(), url)
-            break
+            sys.exit(1)
     except KeyboardInterrupt:
         print('')
         print('Program interrupted by user...')
-        break
+        sys.exit(1)
     except Exception as e:
         print("Unable to retrieve or parse page",url)
         print("Error",e)
-        fail = fail + 1
-        if fail > 5 : break
-        continue
-    
-    print(url,len(js))
-    count = count + 1
+        sys.exit(1)
 
-    if not js:
-        print("Failure to Retreive data ")
-        fail = fail + 1
-        if fail > 5 : break
-        continue
-    
+    # cur.execute('SELECT MAX(id) FROM Currency WHERE strftime("%Y", initDate) = ?', (str(year),))
+    # max_id = cur.fetchone()[0]
+    # start_index = max_id + 1 if max_id else 1
+
     country = "Chile"
     unit = "CLP"
-    value = None
-    initDate = None
-
-    index = start - 1
-
-    if js["serie"][index]["valor"] > 0:
-        value = js["serie"][index]["valor"]
-
-    if len(js["serie"][index]["fecha"]) > 0:
-        initDate = js["serie"][index]["fecha"]
 
 
-    # Reset the fail counter
-    fail = 0
-    print("   ",value,initDate)
-    cur.execute('''INSERT OR IGNORE INTO Currency (id, country, unit, value, initDate)
-        VALUES ( ?, ?, ?, ?, ? )''', ( start, country, unit, value, initDate))
-    if count % 50 == 0 : conn.commit()
-    if count % 100 == 0 : time.sleep(1)
+    for period in js["serie"]:
+        if period["valor"] > 0:
+            value = round(float(period["valor"]), 3)
+            initDate = parsemaildate(period["fecha"])
+            print("Inserting data:", country, unit, value, initDate)
+            cur.execute('''INSERT INTO Currency (country, unit, value, initDate)
+                        VALUES (?, ?, ?, ?)''', (country, unit, value, initDate))
+            
+
+        # if count % 50 == 0 : conn.commit()
+        # if count % 100 == 0 : time.sleep(1)
 
 conn.commit()
 cur.close()

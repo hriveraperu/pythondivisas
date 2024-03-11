@@ -1,5 +1,4 @@
 import sqlite3
-import time
 import ssl
 import urllib.request, urllib.parse, urllib.error
 from urllib.parse import urljoin
@@ -8,55 +7,35 @@ import re
 from datetime import datetime, timedelta
 import json
 
-# Not all systems have this so conditionally define parser
-try:
-    import dateutil.parser as parser
-except:
-    pass
+def parsemaildate(md):
+    months = {
+        'Ene': '01', 'Feb': '02', 'Mar': '03', 'Abr': '04',
+        'May': '05', 'Jun': '06', 'Jul': '07', 'Ago': '08',
+        'Set': '09', 'Oct': '10', 'Nov': '11', 'Dic': '12'
+    }
+    pieces = md.split('.')
+    day = pieces[0]
+    month_str = pieces[1]
+    year = pieces[2]
 
-def parsemaildate(md) :
-    # See if we have dateutil
-    try:
-        pdate = parser.parse(tdate)
-        test_at = pdate.isoformat()
-        return test_at
-    except:
-        pass
-
-    # Non-dateutil version - we try our best
-
-    pieces = md.split()
-    notz = " ".join(pieces[:4]).strip()
-
-    # Try a bunch of format variations - strptime() is *lame*
-    dnotz = None
-    for form in [ '%d %b %Y %H:%M:%S', '%d %b %Y %H:%M:%S',
-        '%d %b %Y %H:%M', '%d %b %Y %H:%M', '%d %b %y %H:%M:%S',
-        '%d %b %y %H:%M:%S', '%d %b %y %H:%M', '%d %b %y %H:%M' ] :
-        try:
-            dnotz = datetime.strptime(notz, form)
-            break
-        except:
-            continue
-
-    if dnotz is None :
-        # print 'Bad Date:',md
+    # Convert month abbreviation to month number
+    month = months.get(month_str)
+    if not month:
         return None
 
-    iso = dnotz.isoformat()
+    # Pad day and year with zeros if needed
+    day = day.zfill(2)
+    year = year.zfill(2)
+    if int(year) < 50:
+        year = '20' + year
+    else:
+        year = '19' + year
 
-    tz = "+0000"
-    try:
-        tz = pieces[4]
-        ival = int(tz) # Only want numeric timezone values
-        if tz == '-0000' : tz = '+0000'
-        tzh = tz[:3]
-        tzm = tz[3:]
-        tz = tzh+":"+tzm
-    except:
-        pass
+    # Construct the date string in yyyy-mm-dd format
+    date_str = f"{year}-{month}-{day}"
 
-    return iso+tz
+    return date_str
+
 
 # Ignore SSL certificate errors
 ctx = ssl.create_default_context()
@@ -73,93 +52,40 @@ cur.execute('''CREATE TABLE IF NOT EXISTS Currency
     (id INTEGER UNIQUE, country TEXT, unit TEXT, value DECIMAL,
     initDate DATETIME)''')
 
-# Pick up where we left off
-start = None
-cur.execute('SELECT max(id) FROM Currency' )
+url = baseurl
+text = "None"
 try:
-    row = cur.fetchone()
-    if row is None :
-        start = 0
-    else:
-        start = row[0]
-except:
-    start = 0
+    # Open with a timeout of 30 seconds
+    document = urllib.request.urlopen(url, None, 30, context=ctx)
+    text = document.read().decode()
+    js = json.loads(text)
+    if document.getcode() != 200 :
+        print("Error code=",document.getcode(), url)
+        sys.exit(1)
+except KeyboardInterrupt:
+    print('')
+    print('Program interrupted by user...')
+    sys.exit(1)
+except Exception as e:
+    print("Unable to retrieve or parse page",url)
+    print("Error",e)
+    sys.exit(1)
+country = "Peru"
+unit = "PEN"
+value = None
+initDate = None
 
-if start is None : start = 0
+index = 0
 
-print("start", start)
-
-many = 0
-count = 0
-fail = 0
-while True:
-    if ( many < 1 ) :
-        conn.commit()
-        sval = input('How many messages:')
-        if ( len(sval) < 1 ) : break
-        many = int(sval)
-
-    start = start + 1
-    cur.execute('SELECT id FROM Currency WHERE id=?', (start,) )
-    try:
-        row = cur.fetchone()
-        if row is not None : continue
-    except:
-        row = None
-
-    many = many - 1
-    url = baseurl
-
-    text = "None"
-    try:
-        # Open with a timeout of 30 seconds
-        document = urllib.request.urlopen(url, None, 30, context=ctx)
-        text = document.read().decode()
-        js = json.loads(text)
-        if document.getcode() != 200 :
-            print("Error code=",document.getcode(), url)
-            break
-    except KeyboardInterrupt:
-        print('')
-        print('Program interrupted by user...')
-        break
-    except Exception as e:
-        print("Unable to retrieve or parse page",url)
-        print("Error",e)
-        fail = fail + 1
-        if fail > 5 : break
-        continue
-    
-    print(url,len(js))
-    count = count + 1
-
-    if not js:
-        print("Failure to Retreive data ")
-        fail = fail + 1
-        if fail > 5 : break
-        continue
-    
-    country = "Peru"
-    unit = "PEN"
-    value = None
-    initDate = None
-
-    index = start - 1
-
-    if len(js["periods"][index]["values"]) > 0:
-        value = js["periods"][index]["values"][1]
-
-    if len(js["periods"][index]["name"]) > 0:
-        initDate = js["periods"][index]["name"]
-
-
-    # Reset the fail counter
-    fail = 0
-    print("   ",value,initDate)
+for index, period in enumerate(js["periods"]):
+    value = period["values"][1] if len(period["values"]) > 1 else None
+    if value == "n.d.":
+        continue  # Skip this row if value is "n.d."
+    initDate = parsemaildate(period["name"])
+    value = round(float(value), 3)
+    print("   ", value, initDate)
     cur.execute('''INSERT OR IGNORE INTO Currency (id, country, unit, value, initDate)
-        VALUES ( ?, ?, ?, ?, ? )''', ( start, country, unit, value, initDate))
-    if count % 50 == 0 : conn.commit()
-    if count % 100 == 0 : time.sleep(1)
+        VALUES ( ?, ?, ?, ?, ? )''', (index + 1, country, unit, value, initDate))
 
 conn.commit()
 cur.close()
