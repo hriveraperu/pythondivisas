@@ -1,10 +1,8 @@
 import sqlite3
 import ssl
 import urllib.request, urllib.parse, urllib.error
-from urllib.parse import urljoin
-from urllib.parse import urlparse
-from datetime import datetime, timedelta
 import json
+import sys
 
 def parsemaildate(md) :
     md = md[0:10]
